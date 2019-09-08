@@ -1,6 +1,7 @@
 package com.ycoko.stock;
 
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.Serializable;
 import java.text.ParseException;
@@ -17,6 +18,7 @@ import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.TreeMap;
 
 import javax.mail.Authenticator;
 import javax.mail.BodyPart;
@@ -100,24 +102,33 @@ public class FinancialTools {
 			return "Rank [name=" + name + ", min=" + min + ", max=" + max + ", cur=" + cur + ", rank=" + rank + "]";
 		}
 		public String toTable() {
-			String rankcolor= "green";
+			String rankcolor = bgbyRank();
 			
-			if(rank>=80 || rank<=20){
-				rankcolor = "blue";
-			}
-			if(rank>=90 ||rank<=10){
+			return "<table style='border:1px solid blue;width:100%;'><tr><td>"+name+"</td><td>cur="+String.format("%.4f", cur)+"</td><td>min="+String.format("%.4f", min)+"</td><td>max="+String.format("%.4f", max)+"</td><td style='background:"+rankcolor+";color:white;'>rank="+(rank<10?"0"+String.format("%.2f", rank):String.format("%.2f", rank))+"</td></tr></table>";
+		}
+		private String bgbyRank() {
+			String rankcolor= "green";
+			if(rank>=90){
 				rankcolor= "red";
 			}
+			else if(rank>=80){
+				rankcolor = "blue";
+			}
 			
-			
-			return "<table style='border:1px solid blue;'><tr><td>"+name+"</td><td>cur="+String.format("%.4f", cur)+"</td><td>min="+String.format("%.4f", min)+"</td><td>max="+String.format("%.4f", max)+"</td><td style='background:"+rankcolor+";color:white;'>rank="+String.format("%.2f", rank)+"</td></tr></table>";
+			if(rank<=10){
+				rankcolor= "black";
+			}
+			else if(rank<=20){
+				rankcolor= "gray";
+			}
+			return rankcolor;
 		}
 		
 	}
 	public static void main(String[] args) throws Exception {
 		
 		
-		calculateToday();
+		calculateTodayAllStocks();
 		
 		Timer timer = new Timer();
 		SimpleDateFormat sdf = new SimpleDateFormat();
@@ -143,7 +154,7 @@ public class FinancialTools {
 				
 				try {
 					System.out.println("Timer task scheduled");
-					calculateToday();
+					calculateTodayAllStocks();
 					System.out.println("Timer task:[getIncrementalNewsForKeyWord] done "+new Date().toLocaleString());
 				} catch (Exception e) {
 					e.printStackTrace();
@@ -155,15 +166,138 @@ public class FinancialTools {
 	}
 
 
-	private static void calculateToday()
+	static class RankReport{
+		static Map<String,String> nameMap = new HashMap<String,String>();
+		static{
+			nameMap.put("600000", "浦发银行");
+			nameMap.put("600015", "华夏银行");
+			nameMap.put("600016", "民生银行");
+			nameMap.put("600036", "招商银行");
+			nameMap.put("601009", "南京银行");
+			nameMap.put("601166", "兴业银行");
+			nameMap.put("601169", "北京银行");
+			nameMap.put("601288", "农业银行");
+			nameMap.put("601328", "交通银行");
+			nameMap.put("601398", "工商银行");
+			nameMap.put("601818", "光大银行");
+			nameMap.put("601939", "建设银行");
+			nameMap.put("601988", "中国银行");
+			nameMap.put("601998", "中信银行");
+		}
+		public RankReport(String name,String code, String rankData, List<Rank> ranks) {
+			super();
+			this.name = name;
+			this.code = code;
+			this.rankData = rankData;
+			this.ranks = ranks;
+		}
+		String name;
+		String code;
+		String rankData;
+		List<Rank> ranks;
+		public String getName() {
+			return name;
+		}
+		public void setName(String name) {
+			this.name = name;
+		}
+		public String getRankData() {
+			return rankData;
+		}
+		public void setRankData(String rankData) {
+			this.rankData = rankData;
+		}
+		public List<Rank> getRanks() {
+			return ranks;
+		}
+		public void setRanks(List<Rank> ranks) {
+			this.ranks = ranks;
+		}
+		public String getCode() {
+			return code;
+		}
+		public void setCode(String code) {
+			this.code = code;
+		}
+		
+		
+		
+	}
+	private static void calculateTodayAllStocks() throws AddressException, JsonProcessingException, IOException, MessagingException, Exception{
+		File[] files= new File("/ycoko/work/others/stocks/dailyrank").listFiles(new FilenameFilter() {
+			
+			@Override
+			public boolean accept(File dir, String name) {
+				return name.contains("baseline");
+			}
+		});
+		
+		List<RankReport> rrs = new ArrayList<>();
+		for(File f:files){
+			String code = f.getName().substring(0, f.getName().indexOf("."));
+			rrs.add(calculateToday(code));
+		}
+		
+		
+		StringBuilder sb2 = new StringBuilder();
+		sb2.append("<div style='width:100%;'>");
+		sb2.append("<h2>银行综合排名</h2>");
+		sb2.append("<table style='width:100%;'><tr style='backgroud:golden;'><td>股票</td><td>股价</td><td>波动幅</td><td>涨跌额</td><td>换手率</td><td>综合分</td></tr>");
+
+		List<RankReport> rrsSorted1 = new ArrayList<>();
+		TreeMap<Double,RankReport> rrss = new TreeMap<>();
+		
+		rrs.forEach(rr->{
+			double sum = 0.0;
+			for(Rank r:rr.ranks){
+				sum +=r.rank;
+			}
+			double totalRank = 100-sum/rr.ranks.size();
+			rrss.put(totalRank, rr);
+		});
+		rrsSorted1.addAll(rrss.values());
+		
+		//cross compare
+		rrsSorted1.forEach(rr->{
+			StringBuilder lineb = new StringBuilder("<tr>");
+			lineb.append("<td style='border:1px solid blue;'>"+rr.name+"</td>");
+			double sum = 0.0;
+			for(Rank r:rr.ranks){
+				lineb.append("<td style='border:1px solid blue;color:white;background:"+r.bgbyRank()+"'>"+String.format("%.2f", r.rank)+"</td>");
+				sum +=r.rank;
+			}
+			Rank totalRank = new Rank("", 0d, 0d, 0d, sum/rr.ranks.size());
+			lineb.append("<td style='border:1px solid blue;color:white;background:"+totalRank.bgbyRank()+"'>"+String.format("%.2f", totalRank.rank)+"</td>");
+			lineb.append("</tr>");
+			sb2.append(lineb);
+		});
+		sb2.append("</table></div>");
+		
+		StringBuilder sb = new StringBuilder();
+		rrsSorted1.forEach(rr->sb.append("<div style='width:100%;'><h3>"+rr.name+"</h3><div style='width:100%;'>"+rr.rankData+"</div></div>"));
+		
+		
+		sendMail(new String[]{"今日银行股分析"}, sb2.append(sb));
+		
+	}
+	
+	private static RankReport calculateToday(String code)
 			throws IOException, Exception, JsonProcessingException, AddressException, MessagingException {
-		List<String> lines = FileUtils.readLines(new File("/ycoko/work/others/stocks/dailyrank/600016.baseline.20110101-20190907.csv"));
+		File basefile = new File("/ycoko/work/others/stocks/dailyrank/"+code+".baseline.csv");
+		List<String> lines = FileUtils.readLines(basefile);
 //		List<String> lines = FileUtils.readLines(new File("C:/Users/84854/Downloads/stock/src/main/resources/600016.baseline.20110101-20190907.csv"));
 		Map<String,List<Double>> historicalData = new HashMap<String,List<Double>>();
 		Map<Integer,String> indexMap = new HashMap<Integer,String>();
+		
+		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+		String dateStr = sdf.format(new Date());
+		boolean containsTodayData = false;
 		if(lines.size()>0){
 			for(int i=0;i<lines.size();i++){
 				String[] lineParts = lines.get(i).replace("-", "").split(",");
+				if(lineParts[1].equals(dateStr.replace("-", ""))){
+					containsTodayData = true;
+				}
 				if(i==0){
 					//process header
 					for(int j = 0; j < lineParts.length; j++){
@@ -201,36 +335,44 @@ public class FinancialTools {
 			Collections.sort(entry.getValue());
 		}
 		
-		
-		DailyInfo info = new DongFangCaiFu().getDailyInfo("600016");
+		System.out.println("getting daily info from Dongfangcaifu for:"+code);
+		DailyInfo info = new DongFangCaiFu().getDailyInfo(code);//600016
 		
 		
 		List<Rank> all = new ArrayList<Rank>();
 		Rank rankCurPrice = createItem(historicalData, "今日股价",StockMeta.closePrice, Double.parseDouble(info.currentPrice));
-		Rank rankHiLowDiff = createItem(historicalData, "日波动(分)",StockMeta.hilowDiff, Double.parseDouble(info.highestPrice)-Double.parseDouble(info.lowestPrice));
-		Rank rankTyDiff = createItem(historicalData, "日涨跌(分)",StockMeta.tyDiff, Double.parseDouble(info.currentPrice)-Double.parseDouble(info.yesterdayClosedPrice));
+		Rank rankHiLowDiff = createItem(historicalData, "今日波动",StockMeta.hilowDiff, Double.parseDouble(info.highestPrice)-Double.parseDouble(info.lowestPrice));
+		Rank rankTyDiff = createItem(historicalData, "今日涨跌",StockMeta.tyDiff, Double.parseDouble(info.currentPrice)-Double.parseDouble(info.yesterdayClosedPrice));
 		Rank rankTurnoverRate = createItem(historicalData, "换手率(%)",StockMeta.turnoverRate, Double.parseDouble(info.exchangeRatePercent)*1.000001/100);
-		rankHiLowDiff.cur = rankHiLowDiff.cur * 100;
-		rankTyDiff.cur = rankTyDiff.cur * 100;
 		rankTurnoverRate.cur = rankTurnoverRate.cur * 100;
+		rankTurnoverRate.min = rankTurnoverRate.min * 100;
+		rankTurnoverRate.max = rankTurnoverRate.max * 100;
 		
 		all.add(rankCurPrice);
-		all.add(rankHiLowDiff);
 		all.add(rankTyDiff);
+		all.add(rankHiLowDiff);
 		all.add(rankTurnoverRate);
 		
 
+//		FileUtils.write(new File("C:/Users/84854/Downloads/"+dateStr+".dat"), new ObjectMapper().writeValueAsString(all));
+		FileUtils.write(new File("/ycoko/work/others/stocks/dailyrank/"+code+"."+dateStr+".dat"), new ObjectMapper().writeValueAsString(all));
+//		String newLine = ",tradeDate,preClosePrice,openPrice,highestPrice,lowestPrice,closePrice,negMarketValue,turnoverValue,dealAmount,turnoverRate";
+		if(!containsTodayData){
+			String lastline = lines.get(lines.size()-1).replace("-", "");
+			String newLine2 = (lines.size()-1)+","+dateStr+","+info.yesterdayClosedPrice+","+info.todayOpenPrice+","+info.highestPrice+","+info.lowestPrice
+					+","+info.currentPrice+",-1,-1,-1,"+(Double.parseDouble(info.exchangeRatePercent)*1.000001/100)+"\n";
+			if(!lastline.equals(newLine2)){
+				FileUtils.write(basefile, newLine2, true);
+			}
+		}
+		
 		StringBuilder sb = new StringBuilder();
 		all.stream().forEach(item->sb.append(item.toTable()));
-		
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
-		String dateStr = sdf.format(new Date());
-		
-//		FileUtils.write(new File("C:/Users/84854/Downloads/"+dateStr+".dat"), new ObjectMapper().writeValueAsString(all));
-		FileUtils.write(new File("/ycoko/work/others/stocks/dailyrank/"+dateStr+".dat"), new ObjectMapper().writeValueAsString(all));
+		RankReport rr = new RankReport(RankReport.nameMap.get(code)+code,code, sb.toString(),all);
 		
 		
-		sendMail(new String[]{"民生银行"+dateStr}, sb);
+		return rr;
+//		sendMail(new String[]{"民生银行"+dateStr}, sb);
 	}
 
 
