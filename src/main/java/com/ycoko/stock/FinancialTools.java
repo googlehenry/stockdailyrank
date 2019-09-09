@@ -242,7 +242,7 @@ public class FinancialTools {
 		StringBuilder sb2 = new StringBuilder();
 		sb2.append("<div style='width:100%;'>");
 		sb2.append("<h2>银行综合排名</h2>");
-		sb2.append("<table style='width:100%;'><tr style='backgroud:golden;'><td>股票</td><td>股价</td><td>波动幅</td><td>涨跌额</td><td>换手率</td><td>综合分</td></tr>");
+		sb2.append("<table style='width:100%;'><tr style='backgroud:golden;'><td>股票</td><td>当前价格</td><td>日高低差</td><td>日涨跌额</td><td>换手率%</td><td>综合分</td></tr>");
 
 		List<RankReport> rrsSorted1 = new ArrayList<>();
 		TreeMap<Double,RankReport> rrss = new TreeMap<>();
@@ -294,7 +294,7 @@ public class FinancialTools {
 		boolean containsTodayData = false;
 		if(lines.size()>0){
 			for(int i=0;i<lines.size();i++){
-				String[] lineParts = lines.get(i).replace("-", "").split(",");
+				String[] lineParts = lines.get(i).replace("-", "").replace("E","e").split(",");
 				if(lineParts[1].equals(dateStr.replace("-", ""))){
 					containsTodayData = true;
 				}
@@ -307,7 +307,7 @@ public class FinancialTools {
 					for(int j = 0; j < lineParts.length; j++){
 						String head = indexMap.get(j);
 						List<Double> data= historicalData.getOrDefault(head, new ArrayList<Double>());
-						data.add(Double.parseDouble(lineParts[j]));
+						data.add(Double.parseDouble(lineParts[j])>100?0:Double.parseDouble(lineParts[j]));
 						historicalData.put(head, data);
 					}
 					//Hi-low
@@ -340,27 +340,27 @@ public class FinancialTools {
 		
 		
 		List<Rank> all = new ArrayList<Rank>();
-		Rank rankCurPrice = createItem(historicalData, "今日股价",StockMeta.closePrice, Double.parseDouble(info.currentPrice));
-		Rank rankHiLowDiff = createItem(historicalData, "今日波动",StockMeta.hilowDiff, Double.parseDouble(info.highestPrice)-Double.parseDouble(info.lowestPrice));
-		Rank rankTyDiff = createItem(historicalData, "今日涨跌",StockMeta.tyDiff, Double.parseDouble(info.currentPrice)-Double.parseDouble(info.yesterdayClosedPrice));
+		Rank rankCurPrice = createItem(historicalData, "今日价格",StockMeta.closePrice, Double.parseDouble(info.currentPrice));
+		Rank rankHiLowDiff = createItem(historicalData, "日高低差",StockMeta.hilowDiff, Double.parseDouble(info.highestPrice)-Double.parseDouble(info.lowestPrice));
+		Rank rankTyDiff = createItem(historicalData, "日涨跌额",StockMeta.tyDiff, Double.parseDouble(info.currentPrice)-Double.parseDouble(info.yesterdayClosedPrice));
 		Rank rankTurnoverRate = createItem(historicalData, "换手率(%)",StockMeta.turnoverRate, Double.parseDouble(info.exchangeRatePercent)*1.000001/100);
 		rankTurnoverRate.cur = rankTurnoverRate.cur * 100;
 		rankTurnoverRate.min = rankTurnoverRate.min * 100;
 		rankTurnoverRate.max = rankTurnoverRate.max * 100;
 		
 		all.add(rankCurPrice);
-		all.add(rankTyDiff);
 		all.add(rankHiLowDiff);
+		all.add(rankTyDiff);
 		all.add(rankTurnoverRate);
 		
 
 //		FileUtils.write(new File("C:/Users/84854/Downloads/"+dateStr+".dat"), new ObjectMapper().writeValueAsString(all));
-		FileUtils.write(new File("/ycoko/work/others/stocks/dailyrank/"+code+"."+dateStr+".dat"), new ObjectMapper().writeValueAsString(all));
+		FileUtils.write(new File("/ycoko/work/others/stocks/dailyrank/report."+code+"."+dateStr+".dat"), new ObjectMapper().writeValueAsString(all));
 //		String newLine = ",tradeDate,preClosePrice,openPrice,highestPrice,lowestPrice,closePrice,negMarketValue,turnoverValue,dealAmount,turnoverRate";
 		if(!containsTodayData){
-			String lastline = lines.get(lines.size()-1).replace("-", "");
+			String lastline = lines.get(lines.size()-1).replace("-", "").replace("E","e");
 			String newLine2 = (lines.size()-1)+","+dateStr+","+info.yesterdayClosedPrice+","+info.todayOpenPrice+","+info.highestPrice+","+info.lowestPrice
-					+","+info.currentPrice+",-1,-1,-1,"+(Double.parseDouble(info.exchangeRatePercent)*1.000001/100)+"\n";
+					+","+info.currentPrice+",-1,-1,-1,"+String.format("%.4f", (Double.parseDouble(info.exchangeRatePercent)*1.000001/100))+"\n";
 			if(!lastline.equals(newLine2)){
 				FileUtils.write(basefile, newLine2, true);
 			}

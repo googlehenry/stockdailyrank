@@ -6,7 +6,11 @@ import java.net.URL;
 import java.util.Map;
 
 public class HttpUtil {
-
+public static void main(String[] args) {
+	String val = "7.000007E-4";
+	Double d = Double.parseDouble(val);
+	System.out.println(String.format("%.5f", d));
+}
 	
 	public static String getHtmlExcep(String urlStr,String pageEncoding,Map<String,String> reqHeader) throws Exception{
 		return getHtml(urlStr, pageEncoding, reqHeader);
