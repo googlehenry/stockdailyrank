@@ -138,7 +138,7 @@ public class FinancialTools {
 		String year = String.valueOf((date.getYear()+1900));
 		String month = String.valueOf(date.getMonth()+1);
 		String day = String.valueOf(date.getDate());
-		String firstTimeDateStr = year+"-"+month+"-"+day+" 20:00:00";
+		String firstTimeDateStr = year+"-"+month+"-"+day+" 15:05:00";
 		
 		Date firstTimeDate = new Date();
 		try {
@@ -257,25 +257,31 @@ public class FinancialTools {
 		});
 		rrsSorted1.addAll(rrss.values());
 		
+		StringBuilder sbTotalDaily = new StringBuilder();
+		
 		//cross compare
 		rrsSorted1.forEach(rr->{
 			StringBuilder lineb = new StringBuilder("<tr>");
 			lineb.append("<td style='border:1px solid blue;'>"+rr.name+"</td>");
 			double sum = 0.0;
+			sbTotalDaily.append(rr.name+","+rr.code);
 			for(Rank r:rr.ranks){
 				lineb.append("<td style='border:1px solid blue;color:white;background:"+r.bgbyRank()+"'>"+String.format("%.2f", r.rank)+"</td>");
 				sum +=r.rank;
+				sbTotalDaily.append(","+r.name+":"+r.rank);
 			}
 			Rank totalRank = new Rank("", 0d, 0d, 0d, sum/rr.ranks.size());
 			lineb.append("<td style='border:1px solid blue;color:white;background:"+totalRank.bgbyRank()+"'>"+String.format("%.2f", totalRank.rank)+"</td>");
 			lineb.append("</tr>");
 			sb2.append(lineb);
+			sbTotalDaily.append(",total:"+totalRank.rank+"\n");//code,score
 		});
 		sb2.append("</table></div>");
 		
 		StringBuilder sb = new StringBuilder();
 		rrsSorted1.forEach(rr->sb.append("<div style='width:100%;'><h3>"+rr.name+"</h3><div style='width:100%;'>"+rr.rankData+"</div></div>"));
 		
+		FileUtils.write(new File("/ycoko/work/others/stocks/dailyrank/report.bankscorehistory.dat"),sbTotalDaily.toString(),true);
 		
 		sendMail(new String[]{"今日银行股分析"}, sb2.append(sb));
 		
