@@ -35,6 +35,15 @@ import javax.mail.internet.MimeMessage;
 import javax.mail.internet.MimeMultipart;
 
 import org.apache.commons.io.FileUtils;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartUtilities;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.chart.plot.XYPlot;
+import org.jfree.data.xy.XYDataset;
+import org.jfree.data.xy.XYSeries;
+import org.jfree.data.xy.XYSeriesCollection;
+import org.jfree.xml.util.Base64;
 import org.jsoup.helper.StringUtil;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -48,6 +57,7 @@ public class FinancialTools {
 		static final String hilowDiff = "hilowDiff";
 		static final String closePrice = "closePrice";
 		static final String turnoverRate = "turnoverRate";
+		static final String total = "total";
 		
 	}
 	@JsonIgnoreProperties(value = { "hibernateLazyInitializer", "handler" })
@@ -107,23 +117,27 @@ public class FinancialTools {
 			return "<table style='border:1px solid blue;width:100%;'><tr><td>"+name+"</td><td>cur="+String.format("%.4f", cur)+"</td><td>min="+String.format("%.4f", min)+"</td><td>max="+String.format("%.4f", max)+"</td><td style='background:"+rankcolor+";color:white;'>rank="+(rank<10?"0"+String.format("%.2f", rank):String.format("%.2f", rank))+"</td></tr></table>";
 		}
 		private String bgbyRank() {
-			String rankcolor= "green";
-			if(rank>=90){
-				rankcolor= "red";
-			}
-			else if(rank>=80){
-				rankcolor = "blue";
-			}
-			
-			if(rank<=10){
-				rankcolor= "black";
-			}
-			else if(rank<=20){
-				rankcolor= "gray";
-			}
-			return rankcolor;
+			return(bgbyRankStatic(rank));
 		}
 		
+	}
+	
+	public static String bgbyRankStatic(double rank) {
+		String rankcolor= "green";
+		if(rank>=90){
+			rankcolor= "red";
+		}
+		else if(rank>=80){
+			rankcolor = "blue";
+		}
+		
+		if(rank<=10){
+			rankcolor= "black";
+		}
+		else if(rank<=20){
+			rankcolor= "gray";
+		}
+		return rankcolor;
 	}
 	public static void main(String[] args) throws Exception {
 		
@@ -184,6 +198,7 @@ public class FinancialTools {
 			nameMap.put("601988", "中国银行");
 			nameMap.put("601998", "中信银行");
 		}
+		public boolean sameAsyesterday = true;
 		public RankReport(String name,String code, String rankData, List<Rank> ranks) {
 			super();
 			this.name = name;
@@ -257,34 +272,176 @@ public class FinancialTools {
 		});
 		rrsSorted1.addAll(rrss.values());
 		
-		StringBuilder sbTotalDaily = new StringBuilder();
-		
 		//cross compare
 		rrsSorted1.forEach(rr->{
 			StringBuilder lineb = new StringBuilder("<tr>");
 			lineb.append("<td style='border:1px solid blue;'>"+rr.name+"</td>");
 			double sum = 0.0;
-			sbTotalDaily.append(rr.name+","+rr.code);
+			
 			for(Rank r:rr.ranks){
 				lineb.append("<td style='border:1px solid blue;color:white;background:"+r.bgbyRank()+"'>"+String.format("%.2f", r.rank)+"</td>");
 				sum +=r.rank;
-				sbTotalDaily.append(","+r.name+":"+r.rank);
 			}
 			Rank totalRank = new Rank("", 0d, 0d, 0d, sum/rr.ranks.size());
 			lineb.append("<td style='border:1px solid blue;color:white;background:"+totalRank.bgbyRank()+"'>"+String.format("%.2f", totalRank.rank)+"</td>");
 			lineb.append("</tr>");
 			sb2.append(lineb);
-			sbTotalDaily.append(",total:"+totalRank.rank+"\n");//code,score
 		});
 		sb2.append("</table></div>");
 		
 		StringBuilder sb = new StringBuilder();
 		rrsSorted1.forEach(rr->sb.append("<div style='width:100%;'><h3>"+rr.name+"</h3><div style='width:100%;'>"+rr.rankData+"</div></div>"));
 		
-		FileUtils.write(new File("/ycoko/work/others/stocks/dailyrank/report.bankscorehistory.dat"),sbTotalDaily.toString(),true);
 		
-		sendMail(new String[]{"今日银行股分析"}, sb2.append(sb));
 		
+		//store daily data
+		StringBuilder sbTotalDaily = new StringBuilder();
+		boolean sameAsYesterday = rrsSorted1.isEmpty()?true:rrsSorted1.get(0).sameAsyesterday;
+		
+		rrsSorted1.forEach(rr->{
+			sbTotalDaily.append(rr.name+","+rr.code);
+			double sum = 0.0;
+			for(Rank r:rr.ranks){
+				sbTotalDaily.append(","+r.name+":"+r.rank);
+				sum +=r.rank;
+			}
+			Rank totalRank = new Rank("", 0d, 0d, 0d, sum/rr.ranks.size());
+			sbTotalDaily.append(",total:"+totalRank.rank+"\n");//code,score
+		});
+		
+		File historyFile= new File("/ycoko/work/others/stocks/dailyrank/report.bankscorehistory.dat");
+		if(!sameAsYesterday){
+			FileUtils.write(historyFile,sbTotalDaily.toString(),true);
+		}
+		//load history daily
+		List<String> lines = FileUtils.readLines(historyFile);
+		Map<String,TreeMap<String,List<Double>>> historicalData = new HashMap<String,TreeMap<String,List<Double>>>();
+		lines.stream().forEach(line->{
+			String[] parts = line.split(",");
+			String name= parts[0];
+			Double closePrice = Double.parseDouble(parts[2].split(":")[1]);
+			Double highlow = Double.parseDouble(parts[3].split(":")[1]);
+			Double yesterdaytoday = Double.parseDouble(parts[4].split(":")[1]);
+			Double turnoverrate = Double.parseDouble(parts[5].split(":")[1]);
+			Double total = Double.parseDouble(parts[6].split(":")[1]);
+			
+			addItemDataForOneBank(historicalData, StockMeta.total,name, total);
+			addItemDataForOneBank(historicalData, StockMeta.closePrice,name, closePrice);
+			addItemDataForOneBank(historicalData, StockMeta.tyDiff,name, yesterdaytoday);
+			addItemDataForOneBank(historicalData, StockMeta.hilowDiff,name, highlow);
+			addItemDataForOneBank(historicalData, StockMeta.turnoverRate,name, turnoverrate);
+			
+		});
+		StringBuilder sbhis= new StringBuilder();
+		int days = 20;
+		historicalData.forEach(
+				(itemname,allbanks)->{
+					sbhis.append("<div><h3>"+itemname+"横向对比(Max=20d)</h3>");
+					sbhis.append("<table>");
+					allbanks.forEach((bank,curve)->{
+						sbhis.append("<tr>");
+						sbhis.append("<td style='border:1px solid blue;'>"+bank+"</td>");
+						for(int i = Math.max(0, curve.size()-days);i<curve.size()-1;i++){
+						 sbhis.append("<td style='border:1px solid blue;color:white;background:"+bgbyRankStatic(curve.get(i))+"'>"+String.format("%.2f", curve.get(i))+"</td>");
+						}
+						sbhis.append("</tr>");
+					});
+					sbhis.append("</table></div><br>");
+				});
+		//graph
+		StringBuilder sbimage= new StringBuilder();
+		sbimage.append("<div><h3>图表</h3>");
+		historicalData.forEach(
+				(itemname,allbanks)->{
+					if(itemname.equals(StockMeta.total)){
+						XYSeriesCollection xySeriesCollection = new XYSeriesCollection();
+						allbanks.forEach((bank,curve)->{
+							XYSeries xyseries1 = new XYSeries(bank.substring(4));
+							for(int i = Math.max(0, curve.size()-days);i<curve.size()-1;i++){
+								int x = i-Math.max(0, curve.size()-days);
+								
+								xyseries1.add(x, curve.get(i));
+	//							System.out.println("x:"+x+",v:"+curve.get(i));
+							}
+							xySeriesCollection.addSeries(xyseries1);
+						});
+						
+						JFreeChart chart= createChart(itemname,xySeriesCollection);
+						
+						
+						try {
+							File tempfile = new File("/ycoko/work/others/stocks/dailyrank/.image.temp.jpg");
+							ChartUtilities.saveChartAsJPEG(tempfile, chart, 600,400);
+							
+							String emage = new String(Base64.encode(FileUtils.readFileToByteArray(tempfile)));
+							sbimage.append("<div><img src=\"data:image/png;base64,"+emage+"\"/></div>");
+							
+						} catch (IOException e) {
+							e.printStackTrace();
+						}
+					}
+				});
+		sbimage.append("</div>");
+//		System.out.println(sbimage);
+		
+		sendMail(new String[]{"今日银行股分析"}, sb2.append(sbhis).append(sbimage).append(sb));
+		
+	}
+
+
+	public static JFreeChart createChart(String title,XYDataset dataset) {
+        // 创建JFreeChart对象：ChartFactory.createXYLineChart
+        JFreeChart jfreechart = ChartFactory.createXYLineChart(title, // 标题
+                "Date", // categoryAxisLabel （category轴，横轴，X轴标签）
+                "Score", // valueAxisLabel（value轴，纵轴，Y轴的标签）
+                dataset, // dataset
+                PlotOrientation.VERTICAL, true, // legend
+                false, // tooltips
+                false); // URLs
+ 
+        // 使用CategoryPlot设置各种参数。以下设置可以省略。
+        XYPlot plot = (XYPlot) jfreechart.getPlot();
+        // 背景色 透明度
+//        plot.setBackgroundAlpha(0.5f);
+//        // 前景色 透明度
+//        plot.setForegroundAlpha(0.5f);
+        // 其它设置可以参考XYPlot类
+ 
+        return jfreechart;
+    }
+	private static XYDataset createXYDataset() {
+        XYSeries xyseries1 = new XYSeries("One");
+        xyseries1.add(1987, 50);
+        xyseries1.add(1997, 20);
+        xyseries1.add(2007, 30);
+        
+        XYSeries xyseries2 = new XYSeries("Two");
+        xyseries2.add(1987, 20);
+        xyseries2.add(1997, 10D);
+        xyseries2.add(2007, 40D);
+        
+ 
+        XYSeries xyseries3 = new XYSeries("Three");
+        xyseries3.add(1987, 40);
+        xyseries3.add(1997, 30.0008);
+        xyseries3.add(2007, 38.24);
+        
+ 
+        XYSeriesCollection xySeriesCollection = new XYSeriesCollection();
+ 
+        xySeriesCollection.addSeries(xyseries1);
+        xySeriesCollection.addSeries(xyseries2);
+        xySeriesCollection.addSeries(xyseries3);
+        
+        return xySeriesCollection;
+    }
+	private static void addItemDataForOneBank(Map<String, TreeMap<String, List<Double>>> historicalData, String item, String bank,
+			Double value) {
+		TreeMap<String,List<Double>> data = historicalData.getOrDefault(item, new TreeMap<String,List<Double>>());
+		List<Double> valuesForBank = data.getOrDefault(bank, new ArrayList<Double>());
+		valuesForBank.add(value);
+		data.put(bank, valuesForBank);
+		historicalData.put(item, data);
 	}
 	
 	private static RankReport calculateToday(String code)
@@ -363,19 +520,21 @@ public class FinancialTools {
 //		FileUtils.write(new File("C:/Users/84854/Downloads/"+dateStr+".dat"), new ObjectMapper().writeValueAsString(all));
 		FileUtils.write(new File("/ycoko/work/others/stocks/dailyrank/report."+code+"."+dateStr+".dat"), new ObjectMapper().writeValueAsString(all));
 //		String newLine = ",tradeDate,preClosePrice,openPrice,highestPrice,lowestPrice,closePrice,negMarketValue,turnoverValue,dealAmount,turnoverRate";
+		boolean sameAsyesterday = true;
 		if(!containsTodayData){
 			String lastline = lines.get(lines.size()-1).replace("-", "").replace("E","e");
 			String newLine2 = (lines.size()-1)+","+dateStr+","+info.yesterdayClosedPrice+","+info.todayOpenPrice+","+info.highestPrice+","+info.lowestPrice
 					+","+info.currentPrice+",-1,-1,-1,"+String.format("%.4f", (Double.parseDouble(info.exchangeRatePercent)*1.000001/100))+"\n";
-			if(!lastline.equals(newLine2)){
+			if(!lastline.contains(newLine2.substring(20))){
 				FileUtils.write(basefile, newLine2, true);
+				sameAsyesterday = false;
 			}
 		}
 		
 		StringBuilder sb = new StringBuilder();
 		all.stream().forEach(item->sb.append(item.toTable()));
 		RankReport rr = new RankReport(RankReport.nameMap.get(code)+code,code, sb.toString(),all);
-		
+		rr.sameAsyesterday = sameAsyesterday;
 		
 		return rr;
 //		sendMail(new String[]{"民生银行"+dateStr}, sb);
